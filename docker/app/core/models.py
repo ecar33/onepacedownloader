@@ -29,6 +29,8 @@ class DownloadStatus(BaseModel):
 class SettingsPayload(BaseModel):
     version: str | None = None
     quality: str | None = None
+    # Pixeldrain Pro (lifts the free-tier transfer cap on direct downloads)
+    pixeldrain_api_key: str | None = None
     # SABnzbd (Usenet hand-off)
     sabnzbd_url: str | None = None
     sabnzbd_api_key: str | None = None

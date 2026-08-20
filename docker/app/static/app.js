@@ -634,6 +634,7 @@ async function refreshIndex() {
 /* ── Settings ────────────────────────────────────────────────────────── */
 
 const SETTINGS_FIELDS = {
+  pdKey: "pixeldrain_api_key",
   sabUrl: "sabnzbd_url",
   sabKey: "sabnzbd_api_key",
   sabCat: "sabnzbd_category",
@@ -709,6 +710,7 @@ async function saveSettings() {
 
 async function testIntegration(which) {
   const statusEl = {
+    pixeldrain: "pdStatus",
     sabnzbd: "sabStatus",
     qbittorrent: "qbStatus",
     nzbgeek: "geekStatus",

@@ -7,8 +7,8 @@ import asyncio
 import threading
 import uuid
 
-from .config import MEDIA_DIR
-from .core.downloader import Downloader, DownloadCancelled
+from .config import MEDIA_DIR, get_pixeldrain_key
+from .core.downloader import Downloader, DownloadCancelled, resolve_api_key
 from .core.episode_index import best_source_for
 from .core.log import log
 from .core.models import DownloadStatus
@@ -139,8 +139,14 @@ class DownloadManager:
         job.status = "downloading"
         self._broadcast(job)
         index = job.index
+        # Read once per job so a key saved mid-session applies to the next
+        # download without restarting the container. Verified before use —
+        # a key we can't confirm as Pro degrades to anonymous downloads
+        # rather than silently disabling the bypass CDN for nothing.
+        api_key = resolve_api_key(get_pixeldrain_key(), on_log=log)
         log(f"Download started: {job.arc.get('title','?')} "
-            f"({len(job.episodes)} ep, {job.source_kind} {job.quality})")
+            f"({len(job.episodes)} ep, {job.source_kind} {job.quality})"
+            f"{' [Pixeldrain Pro]' if api_key else ''}")
 
         try:
             # Group episodes by album_id for efficient batch downloading
@@ -198,6 +204,7 @@ class DownloadManager:
                     cancel_evt=job.cancel_evt,
                     file_filter=file_ids,
                     subfolder=subfolder or None,
+                    api_key=api_key,
                 )
                 downloaded_sub = dl.run()
 

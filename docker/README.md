@@ -118,15 +118,38 @@ machine, change only the left side of the mapping — e.g. `-p 9000:7654`
 ## Settings
 
 Open the **Settings** panel in the web UI to set your default version /
-quality and connect SABnzbd, qBittorrent, and NZBGeek. You can also
-pre-seed these via environment variables — see the commented block in
-`docker-compose.yml`.
+quality, add a Pixeldrain Pro key, and connect SABnzbd, qBittorrent, and
+NZBGeek. You can also pre-seed these via environment variables — see the
+commented block in `docker-compose.yml`.
 
 | Source | How it downloads |
 |--------|------------------|
 | One Pace / Muhn Pace | Downloaded directly into `/media`, organized for Plex / Jellyfin. |
 | Usenet | Handed off to your **SABnzbd** — it downloads to its own folder. |
 | Nyaa torrents | Handed off to your **qBittorrent** — it downloads to its own folder. |
+
+### Pixeldrain Pro
+
+Direct downloads come from Pixeldrain, whose free tier caps and throttles
+transfers per IP — which is why the app falls back to a community bypass
+CDN when things get slow.
+
+If you have a [Pixeldrain](https://pixeldrain.com) Pro subscription, paste
+your key from [pixeldrain.com/user/api_keys](https://pixeldrain.com/user/api_keys)
+into **Settings → Pixeldrain**, or set `PIXELDRAIN_API_KEY` in your compose
+file. Then:
+
+- every request to pixeldrain.com is authenticated as your account, so the
+  transfer is billed to your plan instead of the anonymous per-IP quota;
+- downloads stay on pixeldrain.com at full speed — the slow-speed detector
+  and the bypass CDN are switched off;
+- the bypass CDN is still used if pixeldrain.com is unreachable or your key
+  gets rejected, and the log says which happened.
+
+**Test connection** verifies the key against Pixeldrain and shows which
+plan it belongs to. The key is only ever sent to `pixeldrain.com` — never
+to the bypass CDN. It's stored in plain text in `/config/config.json`,
+same as the other API keys.
 
 ---
 

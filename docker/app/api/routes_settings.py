@@ -21,6 +21,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 # Integration keys persisted in config.json (resolved via get_setting()).
 _INTEGRATION_KEYS = (
+    "pixeldrain_api_key",
     "sabnzbd_url", "sabnzbd_api_key", "sabnzbd_category",
     "qbittorrent_url", "qbittorrent_user", "qbittorrent_pass",
     "qbittorrent_category",
