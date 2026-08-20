@@ -26,6 +26,7 @@ REMOTE_INDEX_URL = f"{REMOTE_INDEX_BASE}/episode_index.json"
 # ── Pixeldrain ─────────────────────────────────────────────────────────
 PIXELDRAIN_API = "https://pixeldrain.com/api/list/{album_id}"
 PIXELDRAIN_FILE = "https://pixeldrain.com/api/file/{file_id}"
+PIXELDRAIN_USER_API = "https://pixeldrain.com/api/user"
 BYPASS_FILE = "https://cdn.pixeldrain.eu.cc/{file_id}"
 
 UA = (
@@ -57,6 +58,7 @@ WEB_PASSWORD = os.environ.get("WEB_PASSWORD", "")
 # These let docker-compose pre-seed a SABnzbd / qBittorrent / NZBGeek
 # setup; the Settings UI persists any changes into config.json.
 INTEGRATION_DEFAULTS = {
+    "pixeldrain_api_key": os.environ.get("PIXELDRAIN_API_KEY", ""),
     "sabnzbd_url":        os.environ.get("SABNZBD_URL", ""),
     "sabnzbd_api_key":    os.environ.get("SABNZBD_API_KEY", ""),
     "sabnzbd_category":   os.environ.get("SABNZBD_CATEGORY", ""),
@@ -105,3 +107,14 @@ def atomic_write(path: Path, data: bytes) -> None:
 def save_config(cfg: dict) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     atomic_write(CONFIG_FILE, json.dumps(cfg, indent=2).encode("utf-8"))
+
+
+def get_pixeldrain_key(cfg: dict | None = None) -> str:
+    """The Pixeldrain Pro API key, or "" for anonymous downloads.
+
+    A Pro key lifts the free tier's per-IP transfer cap and speed limits,
+    so authenticated downloads have no reason to detour via the bypass
+    CDN. Read fresh per job so a key saved in Settings takes effect on the
+    next download without a restart."""
+    return get_setting(load_config() if cfg is None else cfg,
+                       "pixeldrain_api_key") or ""

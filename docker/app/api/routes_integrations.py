@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..config import get_setting, load_config
 from ..core.clients import ClientError, QBittorrentClient, SABnzbdClient
+from ..core.downloader import verify_api_key
 from ..core.episode_index import (
     collect_torrents,
     load_episode_index,
@@ -173,6 +174,27 @@ def clients_status():
 
 
 # ── Connection tests ──────────────────────────────────────────────────
+
+@router.post("/integrations/test/pixeldrain")
+def test_pixeldrain(payload: SettingsPayload):
+    """Verify the Pixeldrain API key and report which plan it belongs to.
+    A key can authenticate perfectly and still not help — the download
+    endpoints ignore a bad key and a free account is capped either way —
+    so only a paid subscription counts as a pass."""
+    key = _merged(load_config(), payload, "pixeldrain_api_key")
+    if not key:
+        return {"ok": False, "message": "No API key entered."}
+    state, message = verify_api_key(key)
+    if state == "pro":
+        return {"ok": True, "message": f"Connected — {message}"}
+    if state == "free":
+        return {"ok": False,
+                "message": f"Key is valid, but {message} — downloads stay "
+                           f"capped."}
+    if state == "invalid":
+        return {"ok": False, "message": f"Invalid API key — {message}."}
+    return {"ok": False, "message": f"Connection failed: {message}"}
+
 
 @router.post("/integrations/test/sabnzbd")
 def test_sabnzbd(payload: SettingsPayload):

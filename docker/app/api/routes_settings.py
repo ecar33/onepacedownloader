@@ -22,6 +22,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 # Integration keys persisted in config.json (resolved via get_setting()).
 _INTEGRATION_KEYS = (
+    "pixeldrain_api_key",
     "sabnzbd_url", "sabnzbd_api_key", "sabnzbd_category",
     "qbittorrent_url", "qbittorrent_user", "qbittorrent_pass",
     "qbittorrent_category",
@@ -30,7 +31,7 @@ _INTEGRATION_KEYS = (
 # Never sent back to the browser: anyone who can open the page could read
 # them. GET reports only whether each is set, and an empty value on PUT
 # leaves the saved one alone.
-_SECRET_KEYS = ("sabnzbd_api_key", "qbittorrent_pass", "nzbgeek_api_key")
+_SECRET_KEYS = ("pixeldrain_api_key", "sabnzbd_api_key", "qbittorrent_pass", "nzbgeek_api_key")
 
 
 @router.get("")

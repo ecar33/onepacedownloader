@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import threading
@@ -15,6 +16,7 @@ from ..config import (
     BYPASS_FILE,
     PIXELDRAIN_API,
     PIXELDRAIN_FILE,
+    PIXELDRAIN_USER_API,
     UA,
 )
 from . import tls_trust
@@ -29,17 +31,43 @@ _TRANSIENT = (
 )
 
 
+# ── Authentication ────────────────────────────────────────────────────
+
+def _is_upstream(url: str) -> bool:
+    """True for pixeldrain.com itself. The bypass CDN is a third party, so
+    the API key must never be attached to a request going there."""
+    return url.startswith("https://pixeldrain.com/")
+
+
+def build_headers(url: str, *, start: int = 0, api_key: str = "") -> dict:
+    """Request headers for a Pixeldrain fetch.
+
+    Pixeldrain authenticates with HTTP Basic auth: the username field is
+    ignored and the API key goes in the password field. With a Pro key the
+    transfer is billed to that account instead of the anonymous per-IP
+    quota, which is what lifts the cap and the throttling."""
+    headers = {"User-Agent": UA}
+    if start:
+        headers["Range"] = f"bytes={start}-"
+    if api_key and _is_upstream(url):
+        token = base64.b64encode(f":{api_key}".encode()).decode("ascii")
+        headers["Authorization"] = f"Basic {token}"
+    return headers
+
+
 # ── Network helpers ───────────────────────────────────────────────────
 
-def http_get(url: str, *, timeout: int = 30, retries: int = 5) -> bytes:
+def http_get(url: str, *, timeout: int = 30, retries: int = 5,
+             api_key: str = "") -> bytes:
     last: Exception | None = None
     for attempt in range(retries):
         try:
-            req = urllib.request.Request(url, headers={
-                "User-Agent": UA,
+            headers = build_headers(url, api_key=api_key)
+            headers.update({
                 "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.9",
             })
+            req = urllib.request.Request(url, headers=headers)
             with tls_trust.urlopen(req, timeout=timeout) as r:
                 return r.read()
         except urllib.error.HTTPError as e:
@@ -59,11 +87,10 @@ def http_get(url: str, *, timeout: int = 30, retries: int = 5) -> bytes:
     raise last if last else RuntimeError("http_get failed")
 
 
-def open_stream(url: str, *, start: int = 0, timeout: int = 60, retries: int = 5):
-    headers = {"User-Agent": UA}
-    if start:
-        headers["Range"] = f"bytes={start}-"
-    req = urllib.request.Request(url, headers=headers)
+def open_stream(url: str, *, start: int = 0, timeout: int = 60, retries: int = 5,
+                api_key: str = ""):
+    req = urllib.request.Request(
+        url, headers=build_headers(url, start=start, api_key=api_key))
     last: Exception | None = None
     for attempt in range(retries):
         try:
@@ -77,26 +104,33 @@ def open_stream(url: str, *, start: int = 0, timeout: int = 60, retries: int = 5
 
 
 def open_stream_dual(file_id: str, *, start: int = 0, timeout: int = 60,
-                     on_log=None, force_bypass: bool = False):
+                     on_log=None, force_bypass: bool = False,
+                     api_key: str = ""):
     """Try pixeldrain.com first; fall back to the bypass CDN on rate-limit
     or unreachability. Pass `force_bypass=True` to skip pixeldrain.com
     entirely — used once the speed-based detector has already shown the
     upstream is throttled this session (saves an 8-second slow start per
-    subsequent file)."""
+    subsequent file).
+
+    With a Pro `api_key` the upstream has no cap to hit, so the bypass CDN
+    is only a last resort for pixeldrain.com being down or the key being
+    rejected — `force_bypass` is ignored."""
     log = on_log or (lambda _m: None)
-    if force_bypass:
+    if force_bypass and not api_key:
         return (open_stream(BYPASS_FILE.format(file_id=file_id),
                             start=start, timeout=timeout),
                 "cdn.pixeldrain.eu.cc")
     primary = PIXELDRAIN_FILE.format(file_id=file_id)
-    headers = {"User-Agent": UA}
-    if start:
-        headers["Range"] = f"bytes={start}-"
     try:
-        req = urllib.request.Request(primary, headers=headers)
+        req = urllib.request.Request(
+            primary, headers=build_headers(primary, start=start,
+                                           api_key=api_key))
         return tls_trust.urlopen(req, timeout=timeout), "pixeldrain.com"
     except urllib.error.HTTPError as e:
-        if e.code in (403, 429):
+        if api_key and e.code in (401, 403):
+            log(f"  pixeldrain.com rejected the Pro API key (HTTP {e.code}) -- "
+                f"falling back to bypass CDN. Check the key in Settings.")
+        elif e.code in (403, 429):
             log(f"  pixeldrain.com rate-limited (HTTP {e.code}) -- "
                 f"falling back to bypass CDN")
         else:
@@ -106,6 +140,84 @@ def open_stream_dual(file_id: str, *, start: int = 0, timeout: int = 60,
     return (open_stream(BYPASS_FILE.format(file_id=file_id),
                         start=start, timeout=timeout),
             "cdn.pixeldrain.eu.cc")
+
+
+# ── Key verification ──────────────────────────────────────────────────
+#
+# The public download endpoints ignore a bad API key: they answer 200 and
+# serve the file anonymously. So a typo'd key looks exactly like a working
+# one — except it's still capped, and we'd have turned the bypass CDN off
+# for nothing. /api/user is the only endpoint that actually rejects a bad
+# key, so ask it before trusting the key on a download.
+
+_verified_pro: set[str] = set()
+_verify_lock = threading.Lock()
+
+
+def verify_api_key(api_key: str, *, timeout: int = 20) -> tuple[str, str]:
+    """Check a key against /api/user.
+
+    Returns `(state, message)` where state is one of:
+      "pro"     — key authenticates against a paid account
+      "free"    — key is genuine but the account has no subscription, so
+                  transfers are still capped
+      "invalid" — Pixeldrain rejected the key
+      "unknown" — couldn't reach Pixeldrain to find out
+    """
+    if not api_key:
+        return "invalid", "No API key set."
+    try:
+        req = urllib.request.Request(
+            PIXELDRAIN_USER_API,
+            headers=build_headers(PIXELDRAIN_USER_API, api_key=api_key))
+        with tls_trust.urlopen(req, timeout=timeout) as r:
+            user = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return "invalid", f"Pixeldrain rejected the key (HTTP {e.code})"
+        return "unknown", f"Pixeldrain HTTP {e.code}"
+    except Exception as e:
+        return "unknown", f"{e}"
+
+    name = user.get("username") or "account"
+    sub = ((user.get("subscription") or {}).get("name") or "").strip()
+    if not sub or sub.lower() == "free":
+        return "free", f"{name} has no Pixeldrain subscription"
+    used = int(user.get("monthly_transfer_used", 0) or 0)
+    cap = int(user.get("monthly_transfer_cap", 0) or 0)
+    transfer = f" · {fmt_bytes(used)} of {fmt_bytes(cap)} transfer used" \
+        if cap else ""
+    return "pro", f"{name} ({sub}){transfer}"
+
+
+def resolve_api_key(api_key: str, *, on_log=None) -> str:
+    """The key to actually download with — "" when it isn't a usable Pro
+    key, so the caller falls back to the anonymous path (bypass CDN and
+    slow-speed switching included). Verified once per distinct key."""
+    if not api_key:
+        return ""
+    with _verify_lock:
+        if api_key in _verified_pro:
+            return api_key
+    log = on_log or (lambda _m: None)
+    state, message = verify_api_key(api_key)
+    if state == "pro":
+        with _verify_lock:
+            _verified_pro.add(api_key)
+        return api_key
+    if state == "invalid":
+        log(f"Pixeldrain Pro key rejected ({message}) -- downloading "
+            f"anonymously. Check the key in Settings.")
+        return ""
+    if state == "free":
+        log(f"Pixeldrain key is valid but {message} -- downloading "
+            f"anonymously so the bypass CDN stays available.")
+        return ""
+    # "unknown" — a network blip shouldn't demote a good key. If
+    # pixeldrain.com really is down, the download falls back on its own.
+    log(f"Could not verify the Pixeldrain Pro key ({message}) -- using it "
+        f"anyway.")
+    return api_key
 
 
 # ── Utilities ─────────────────────────────────────────────────────────
@@ -164,6 +276,7 @@ class Downloader:
         file_filter: set[str] | None = None,
         expected_names: dict[str, str] | None = None,
         subfolder: str | None = None,
+        api_key: str = "",
     ) -> None:
         self.album_id = album_id
         self.dest_dir = dest_dir
@@ -178,12 +291,17 @@ class Downloader:
         # Filtered files the album no longer has, filled in by run().
         self.missing: list[str] = []
         self.subfolder = subfolder
+        # Pixeldrain Pro API key ("" = anonymous). When set, every request to
+        # pixeldrain.com is authenticated and the bypass CDN is off the table
+        # unless the upstream actually fails.
+        self.api_key = api_key or ""
         # Flipped on the moment the speed-based detector judges pixeldrain.com
         # too slow — subsequent files in the same album skip it outright.
         self._prefer_bypass = False
 
     def fetch_album(self) -> dict:
-        data = json.loads(http_get(PIXELDRAIN_API.format(album_id=self.album_id)))
+        data = json.loads(http_get(PIXELDRAIN_API.format(album_id=self.album_id),
+                                   api_key=self.api_key))
         if not data.get("success", True) and "files" not in data:
             raise RuntimeError(f"Pixeldrain API error: {data}")
         return data
@@ -322,15 +440,19 @@ class Downloader:
 
         resp, host = open_stream_dual(
             file_id, start=start, on_log=self.on_log,
-            force_bypass=self._prefer_bypass)
+            force_bypass=self._prefer_bypass, api_key=self.api_key)
         if start and getattr(resp, "status", 206) != 206:
             # The server ignored the Range header and is sending the whole
             # file. Appending it would corrupt the .part, so start over.
             self.on_log(f"  {host} can't resume this file — restarting it")
             start = 0
         if start == 0:
-            suffix = " (forced — pixeldrain.com was slow earlier)" \
-                if self._prefer_bypass else ""
+            if self.api_key and host == "pixeldrain.com":
+                suffix = " (Pro API key)"
+            elif self._prefer_bypass:
+                suffix = " (forced — pixeldrain.com was slow earlier)"
+            else:
+                suffix = ""
             self.on_log(f"  source: {host}{suffix}")
 
         mode = "ab" if start else "wb"
@@ -351,8 +473,11 @@ class Downloader:
                     bytes_now += len(chunk)
                     now = time.time()
 
-                    # Mid-stream switch when pixeldrain.com is slow.
+                    # Mid-stream switch when pixeldrain.com is slow. A Pro
+                    # key means the upstream isn't capped, so a slow patch
+                    # is just a slow patch — don't bail to the bypass CDN.
                     if (host == "pixeldrain.com"
+                            and not self.api_key
                             and not self._prefer_bypass
                             and (now - t0) >= SLOW_AFTER_SEC):
                         avg_bps = (bytes_now - display_start) / max(now - t0, 0.001)

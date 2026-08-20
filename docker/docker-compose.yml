@@ -1,7 +1,7 @@
 services:
   onepace:
     # Pre-built image from GitHub Container Registry — nothing to compile.
-    image: ghcr.io/nicolaslahri/onepacedownloader:latest
+    image: ghcr.io/ecar33/onepacedownloader:latest
     # To build from source instead, comment the line above and uncomment:
     # build: .
     container_name: onepace-downloader
@@ -31,6 +31,11 @@ services:
       # ── Optional integrations ──────────────────────────────────────
       # You can pre-seed these here, or just fill them in via the
       # Settings panel in the web UI (they persist to /config).
+      #
+      # Pixeldrain Pro — authenticates direct downloads against your own
+      # account, so they aren't capped or throttled and never detour via
+      # the bypass CDN. Key: https://pixeldrain.com/user/api_keys
+      # - PIXELDRAIN_API_KEY=your-pixeldrain-api-key
       #
       # SABnzbd — Usenet downloads are queued straight into your server
       # - SABNZBD_URL=http://192.168.1.10:8080
