@@ -7,8 +7,8 @@ import asyncio
 import threading
 import uuid
 
-from .config import MEDIA_DIR, load_config
-from .core.downloader import Downloader, DownloadCancelled
+from .config import MEDIA_DIR, get_setting, load_config
+from .core.downloader import Downloader, DownloadCancelled, resolve_api_key
 from .core.episode_index import best_source_for
 from .core.log import log
 from .core.models import DownloadStatus
@@ -149,8 +149,11 @@ class DownloadManager:
         self._broadcast(job)
         index = job.index
         organize = load_config().get("organize", True)
+        api_key = resolve_api_key(
+            get_setting(load_config(), "pixeldrain_api_key"), on_log=log)
         log(f"Download started: {job.arc.get('title','?')} "
-            f"({len(job.episodes)} ep, {job.source_kind} {job.quality})")
+            f"({len(job.episodes)} ep, {job.source_kind} {job.quality})"
+            f"{' [Pixeldrain Pro]' if api_key else ''}")
 
         try:
             # Group episodes by album_id for efficient batch downloading
@@ -217,6 +220,7 @@ class DownloadManager:
                     file_filter=file_ids,
                     expected_names=expected_names,
                     subfolder=subfolder or None,
+                    api_key=api_key,
                 )
                 downloaded_sub = dl.run()
 

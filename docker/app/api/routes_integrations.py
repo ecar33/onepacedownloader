@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..config import get_setting, load_config
 from ..core.clients import ClientError, QBittorrentClient, SABnzbdClient
+from ..core.downloader import verify_api_key
 from ..core.episode_index import (
     collect_torrents,
     load_episode_index,
@@ -173,6 +174,15 @@ def clients_status():
 
 
 # ── Connection tests ──────────────────────────────────────────────────
+
+@router.post("/integrations/test/pixeldrain")
+def test_pixeldrain(payload: SettingsPayload):
+    key = _merged(load_config(), payload, "pixeldrain_api_key")
+    if not key:
+        return {"ok": False, "message": "No API key entered."}
+    ok, message = verify_api_key(key)
+    return {"ok": ok, "message": message}
+
 
 @router.post("/integrations/test/sabnzbd")
 def test_sabnzbd(payload: SettingsPayload):

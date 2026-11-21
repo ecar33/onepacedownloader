@@ -36,6 +36,7 @@ class SettingsPayload(BaseModel):
     version: str | None = None
     quality: str | None = None
     organize: bool | None = None
+    pixeldrain_api_key: str | None = None
     # SABnzbd (Usenet hand-off)
     sabnzbd_url: str | None = None
     sabnzbd_api_key: str | None = None

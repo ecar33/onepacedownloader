@@ -26,6 +26,7 @@ REMOTE_INDEX_URL = f"{REMOTE_INDEX_BASE}/episode_index.json"
 # ── Pixeldrain ─────────────────────────────────────────────────────────
 PIXELDRAIN_API = "https://pixeldrain.com/api/list/{album_id}"
 PIXELDRAIN_FILE = "https://pixeldrain.com/api/file/{file_id}"
+PIXELDRAIN_USER_API = "https://pixeldrain.com/api/user"
 BYPASS_FILE = "https://cdn.pixeldrain.eu.cc/{file_id}"
 
 UA = (
@@ -57,6 +58,7 @@ WEB_PASSWORD = os.environ.get("WEB_PASSWORD", "")
 # These let docker-compose pre-seed a SABnzbd / qBittorrent / NZBGeek
 # setup; the Settings UI persists any changes into config.json.
 INTEGRATION_DEFAULTS = {
+    "pixeldrain_api_key": os.environ.get("PIXELDRAIN_API_KEY", ""),
     "sabnzbd_url":        os.environ.get("SABNZBD_URL", ""),
     "sabnzbd_api_key":    os.environ.get("SABNZBD_API_KEY", ""),
     "sabnzbd_category":   os.environ.get("SABNZBD_CATEGORY", ""),

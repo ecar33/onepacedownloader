@@ -32,6 +32,10 @@ services:
       # You can pre-seed these here, or just fill them in via the
       # Settings panel in the web UI (they persist to /config).
       #
+      # Pixeldrain Pro — downloads skip the free-tier cap and the bypass CDN.
+      # Key: https://pixeldrain.com/user/api_keys
+      # - PIXELDRAIN_API_KEY=your-pixeldrain-api-key
+      #
       # SABnzbd — Usenet downloads are queued straight into your server
       # - SABNZBD_URL=http://192.168.1.10:8080
       # - SABNZBD_API_KEY=your-sabnzbd-api-key

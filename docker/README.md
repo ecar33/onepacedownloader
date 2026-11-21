@@ -137,6 +137,14 @@ Anyone who can reach port 7654 can use the web UI. To require a password,
 add `-e WEB_PASSWORD=choose-something` (or uncomment it in
 `docker-compose.yml`). Your browser will ask for it once; any username works.
 
+### Pixeldrain Pro
+
+With a paid [Pixeldrain](https://pixeldrain.com) plan, add your
+[API key](https://pixeldrain.com/user/api_keys) in **Settings → Pixeldrain**
+(or `PIXELDRAIN_API_KEY`). Direct downloads then use your account, so they
+aren't capped or throttled and never switch to the bypass CDN. A key that's
+invalid or on a free plan is ignored and downloads work as before.
+
 ---
 
 ## Build from source
